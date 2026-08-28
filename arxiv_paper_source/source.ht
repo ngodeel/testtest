@@ -1,0 +1,172 @@
+class Source {
+  var client;
+
+  construct {
+    client = HttpClient(baseOptions: HttpBaseOptions(
+      headers: {
+        'User-Agent': 'PyroMagma-Academic-Bot/1.0 (mailto:openaccess@pyromagma.org)',
+        'Accept': 'application/json'
+      }
+    ));
+  }
+
+  fun init(context) {
+    // 插件生命周期初始化
+  }
+
+  fun getExploreConfig() {
+    return [
+      {'id': 'artificial intelligence', 'title': 'Artificial Intelligence (AI)'},
+      {'id': 'machine learning', 'title': 'Machine Learning (ML)'},
+      {'id': 'quantum computing', 'title': 'Quantum Computing'},
+      {'id': 'bioinformatics', 'title': 'Bioinformatics & Genetics'},
+      {'id': 'large language models', 'title': 'Large Language Models (LLM)'},
+      {'id': 'neuroscience', 'title': 'Neuroscience & Brain-Computer'}
+    ];
+  }
+
+  /// 搜索学术论文：优先采用全球最大开放学术引擎 OpenAlex，自适应兼容 Crossref
+  async fun search(query, page, {config}) {
+    var pageStr = page.toString();
+    var openAlexUrl = 'https://api.openalex.org/works?search=' + query + '&per-page=10&page=' + pageStr;
+    var resp = await client.get_req(openAlexUrl);
+
+    if (resp.statusCode == 200 && resp.data != null && resp.data['results'] != null) {
+      var items = resp.data['results'];
+      if (items.length > 0) {
+        var results = [];
+        for (var i = 0; i < items.length; ++i) {
+          var item = items[i];
+          var title = 'Untitled Academic Paper';
+          if (item['title'] != null) {
+            title = item['title'];
+          }
+          
+          var authorStr = 'Unknown Researchers';
+          if (item['authorships'] != null && item['authorships'].length > 0) {
+            var names = [];
+            for (var j = 0; j < item['authorships'].length; ++j) {
+              var auth = item['authorships'][j];
+              if (auth['author'] != null && auth['author']['display_name'] != null) {
+                names.add(auth['author']['display_name']);
+              }
+            }
+            if (names.length > 0) {
+              authorStr = names.join(', ');
+            }
+          }
+
+          var doi = '';
+          if (item['doi'] != null) {
+            doi = item['doi'];
+          } else if (item['id'] != null) {
+            doi = item['id'];
+          } else {
+            doi = 'doi_' + item.hashCode.toString();
+          }
+
+          var yearStr = '';
+          if (item['publication_year'] != null) {
+            yearStr = item['publication_year'].toString();
+          }
+
+          var citeStr = '0';
+          if (item['cited_by_count'] != null) {
+            citeStr = item['cited_by_count'].toString();
+          }
+
+          var cover = 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=300&q=80';
+
+          results.add({
+            'id': doi,
+            'title': title,
+            'author': authorStr,
+            'description': 'Year: ' + yearStr + ' | Citations: ' + citeStr + ' | [Open Access Academic Index]',
+            'cover': cover,
+            'contentType': 'paper',
+            'published': item['publication_date'] != null ? item['publication_date'] : ''
+          });
+        }
+        return results;
+      }
+    }
+
+    // 备选 Crossref 开放学术 API 容灾
+    var offset = (page - 1) * 10;
+    var offsetStr = offset.toString();
+    var crossrefUrl = 'https://api.crossref.org/works?query=' + query + '&rows=10&offset=' + offsetStr;
+    var crossResp = await client.get_req(crossrefUrl);
+    if (crossResp.statusCode != 200 || crossResp.data == null || crossResp.data['message'] == null || crossResp.data['message']['items'] == null) {
+      return [];
+    }
+
+    var crossItems = crossResp.data['message']['items'];
+    var crossResults = [];
+    for (var k = 0; k < crossItems.length; ++k) {
+      var cItem = crossItems[k];
+      var titleList = cItem['title'];
+      var cTitleStr = (titleList != null && titleList.length > 0) ? titleList[0] : 'Untitled Academic Paper';
+      
+      var cAuthors = [];
+      if (cItem['author'] != null) {
+        for (var m = 0; m < cItem['author'].length; ++m) {
+          var a = cItem['author'][m];
+          var name = '';
+          if (a['given'] != null) name = name + a['given'] + ' ';
+          if (a['family'] != null) name = name + a['family'];
+          if (name != '') cAuthors.add(name);
+        }
+      }
+      var cAuthorStr = cAuthors.length > 0 ? cAuthors.join(', ') : 'Unknown Researchers';
+      var cDoi = cItem['DOI'] != null ? cItem['DOI'] : 'doi_' + cItem.hashCode.toString();
+
+      crossResults.add({
+        'id': cDoi,
+        'title': cTitleStr,
+        'author': cAuthorStr,
+        'description': cItem['abstract'] != null ? cItem['abstract'] : 'Open Access Academic Publication DOI: ' + cDoi,
+        'cover': 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=300&q=80',
+        'contentType': 'paper',
+        'published': cItem['created'] != null ? cItem['created']['date-time'] : ''
+      });
+    }
+    return crossResults;
+  }
+
+  async fun explore(filterId, page, {config}) {
+    return await this.search(filterId, page, config: config);
+  }
+
+  async fun getDetail(id) {
+    return {
+      'id': id,
+      'title': 'Academic Publication ' + id,
+      'author': 'Open Access Scholars',
+      'description': 'Global Academic Index DOI: ' + id,
+      'contentType': 'paper'
+    };
+  }
+
+  fun getChapters(id) {
+    var link = id;
+    if (!link.startsWith('http')) {
+      link = 'https://doi.org/' + id;
+    }
+    return [
+      {
+        'id': 'full_text_pdf',
+        'title': 'Official Open Access Full-Text & PDF',
+        'index': 0,
+        'mediaUrl': link
+      }
+    ];
+  }
+
+  fun getContent(id, chapterId) {
+    var link = id;
+    if (!link.startsWith('http')) {
+      link = 'https://doi.org/' + id;
+    }
+    return 'DOI: ' + id + '\nOfficial Open Access Full-Text Link: ' + link;
+  }
+}
