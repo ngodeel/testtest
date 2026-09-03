@@ -1,0 +1,156 @@
+class Source {
+  var client;
+
+  construct {
+    client = HttpClient(baseOptions: HttpBaseOptions(
+      headers: {
+        'User-Agent': 'PyroMagma-EuropePMC/1.0 (mailto:biomed@pyromagma.org)',
+        'Accept': 'application/json'
+      }
+    ));
+  }
+
+  fun init(context) {}
+
+  // 1. 动态配置表单
+  fun getConfigSchema() {
+    return [];
+  }
+
+  // 2. 学科探索分类
+  fun getExploreConfig() {
+    return [
+      {'id': 'CRISPR', 'title': 'CRISPR & Gene Editing'},
+      {'id': 'immunotherapy', 'title': 'Cancer Immunotherapy'},
+      {'id': 'mRNA vaccine', 'title': 'mRNA & Synthetic Biology'},
+      {'id': 'neurodegenerative', 'title': 'Alzheimer & Brain Disease'},
+      {'id': 'metagenomics', 'title': 'Metagenomics & Microbiome'}
+    ];
+  }
+
+  // 3. 搜索生物医药与生命科学文献（带完整摘要解析）
+  async fun search(query, page, {config}) {
+    var q = (query != null ? query : '').toString().trim();
+    if (q.indexOf('author:') == 0) {
+      var targetAuthorKey = q.substring(7);
+      return await getAuthorWorks(targetAuthorKey, page, config: config);
+    }
+
+    var pageStr = page.toString();
+    var url = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=' + q + '&format=json&pageSize=10&page=' + pageStr;
+    var resp = await client.get_req(url);
+
+    if (resp == null || resp.statusCode != 200 || resp.data == null || resp.data['resultList'] == null || resp.data['resultList']['result'] == null) {
+      return [];
+    }
+
+    var items = resp.data['resultList']['result'];
+    var results = [];
+    for (var i = 0; i < items.length; ++i) {
+      var item = items[i];
+      var title = item['title'] != null ? item['title'] : 'Biomedical Publication';
+      var authorStr = item['authorString'] != null ? item['authorString'] : 'PMC / Biomedical Researcher';
+
+      // 提取论文摘要
+      var abstractText = '';
+      if (item['abstractText'] != null && item['abstractText'].isNotEmpty) {
+        abstractText = item['abstractText'];
+      } else {
+        var journal = item['journalTitle'] != null ? item['journalTitle'] : 'Europe PMC PubMed Central Repository';
+        abstractText = 'Life science article indexed in PubMed/Europe PMC. Journal: ' + journal;
+      }
+
+      var id = item['doi'] != null ? 'https://doi.org/' + item['doi'] : (item['pmid'] != null ? 'pmid:' + item['pmid'] : 'epmc_' + item.hashCode.toString());
+      var journalTitle = item['journalTitle'] != null ? item['journalTitle'] : 'Europe PMC Archive';
+      var pubYear = item['pubYear'] != null ? item['pubYear'].toString() : '';
+
+      results.add({
+        'id': id,
+        'title': title,
+        'author': {
+          'id': authorStr,
+          'name': authorStr,
+          'avatar': '',
+          'bio': journalTitle,
+          'homeUrl': '',
+          'authorUrl': 'author:' + authorStr,
+          'stats': {
+            'worksCount': 0
+          }
+        },
+        'abstract': abstractText,
+        'description': abstractText,
+        'intro': '🧬 Journal: ' + journalTitle + ' (' + pubYear + ')\n\n' + abstractText,
+        'cover': item['cover'] != null ? item['cover'] : '',
+        'contentType': 'paper',
+        'published': pubYear
+      });
+    }
+    return results;
+  }
+
+  // 4. 学科探索分类
+  async fun explore(category, page, {config}) {
+    return await search(category, page, config: config);
+  }
+
+  // 5. 获取论文详情
+  async fun getDetail(paperId, {config}) {
+    return {
+      'id': paperId,
+      'title': 'Biomedical Publication ' + paperId,
+      'contentType': 'paper',
+      'chapters': [
+        {'id': '1', 'title': 'Full Text (Europe PMC / PubMed Central)'}
+      ]
+    };
+  }
+
+  // 6. 创作者档案
+  async fun getAuthorProfile(authorKey, {config}) {
+    return {
+      'id': authorKey,
+      'name': authorKey,
+      'avatar': '',
+      'banner': '',
+      'bio': 'Europe PMC Life Science Researcher',
+      'homeUrl': '',
+      'authorUrl': 'author:' + authorKey,
+      'stats': {
+        'worksCount': 0,
+        'followersCount': 0
+      }
+    };
+  }
+
+  // 7. 创作者作品流
+  async fun getAuthorWorks(authorKey, page, {config}) {
+    var pageStr = page.toString();
+    var query = 'AUTH:"' + authorKey + '"';
+    var url = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=' + query + '&format=json&pageSize=10&page=' + pageStr;
+    var resp = await client.get_req(url);
+
+    if (resp == null || resp.statusCode != 200 || resp.data == null || resp.data['resultList'] == null || resp.data['resultList']['result'] == null) {
+      return [];
+    }
+
+    var items = resp.data['resultList']['result'];
+    var results = [];
+    for (var i = 0; i < items.length; ++i) {
+      var item = items[i];
+      var title = item['title'] != null ? item['title'] : 'Biomedical Publication';
+      var id = item['doi'] != null ? 'https://doi.org/' + item['doi'] : (item['pmid'] != null ? 'pmid:' + item['pmid'] : 'epmc_' + item.hashCode.toString());
+      var abstractText = item['abstractText'] != null ? item['abstractText'] : '';
+
+      results.add({
+        'id': id,
+        'title': title,
+        'abstract': abstractText,
+        'description': abstractText,
+        'cover': item['cover'] != null ? item['cover'] : '',
+        'contentType': 'paper'
+      });
+    }
+    return results;
+  }
+}

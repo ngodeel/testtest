@@ -1,0 +1,202 @@
+class Source {
+  var client;
+
+  construct {
+    client = HttpClient(baseOptions: HttpBaseOptions(
+      headers: {
+        'User-Agent': 'PyroMagma-Crossref/1.0 (mailto:contact@pyromagma.org)',
+        'Accept': 'application/json'
+      }
+    ));
+  }
+
+  fun init(context) {}
+
+  // 1. 动态配置表单
+  fun getConfigSchema() {
+    return [];
+  }
+
+  // 2. 学科探索分类
+  fun getExploreConfig() {
+    return [
+      {'id': 'neural network', 'title': 'Neural Networks'},
+      {'id': 'computer vision', 'title': 'Computer Vision'},
+      {'id': 'natural language processing', 'title': 'Natural Language Processing'},
+      {'id': 'robotics', 'title': 'Robotics & Control'},
+      {'id': 'cryptography', 'title': 'Cryptography & Security'}
+    ];
+  }
+
+  /// 移除 XML/HTML 标签 (如 <jats:p> 等)
+  fun stripTags(rawHtml) {
+    if (rawHtml == null) return '';
+    var cleaned = rawHtml.replaceAll('<jats:p>', '').replaceAll('</jats:p>', '\n');
+    cleaned = cleaned.replaceAll('<jats:sec>', '').replaceAll('</jats:sec>', '\n');
+    cleaned = cleaned.replaceAll('<jats:title>', '【').replaceAll('</jats:title>', '】\n');
+    cleaned = cleaned.replaceAll('<p>', '').replaceAll('</p>', '\n');
+    cleaned = cleaned.replaceAll('<i>', '').replaceAll('</i>', '');
+    cleaned = cleaned.replaceAll('<b>', '').replaceAll('</b>', '');
+    cleaned = cleaned.replaceAll('<sub>', '').replaceAll('</sub>', '');
+    cleaned = cleaned.replaceAll('<sup>', '').replaceAll('</sup>', '');
+    return cleaned.trim();
+  }
+
+  // 3. 搜索学术文献（带完整摘要解析）
+  async fun search(query, page, {config}) {
+    var q = (query != null ? query : '').toString().trim();
+    if (q.indexOf('author:') == 0) {
+      var targetAuthorKey = q.substring(7);
+      return await getAuthorWorks(targetAuthorKey, page, config: config);
+    }
+
+    var offset = (page - 1) * 10;
+    var offsetStr = offset.toString();
+    var url = 'https://api.crossref.org/works?query=' + q + '&rows=10&offset=' + offsetStr;
+    var resp = await client.get_req(url);
+
+    if (resp == null || resp.statusCode != 200 || resp.data == null || resp.data['message'] == null || resp.data['message']['items'] == null) {
+      return [];
+    }
+
+    var items = resp.data['message']['items'];
+    var results = [];
+    for (var i = 0; i < items.length; ++i) {
+      var item = items[i];
+      var title = 'Untitled Publication';
+      if (item['title'] != null && item['title'].length > 0) {
+        title = item['title'][0];
+      }
+
+      var authors = [];
+      var firstAuthorId = 'author_unknown';
+      var firstAuthorUrl = '';
+      var firstAuthorBio = '';
+
+      if (item['author'] != null) {
+        for (var j = 0; j < item['author'].length; ++j) {
+          var a = item['author'][j];
+          var given = a['given'] != null ? a['given'] : '';
+          var family = a['family'] != null ? a['family'] : '';
+          var name = (given + ' ' + family).trim();
+          if (name.isNotEmpty) {
+            authors.add(name);
+            if (j == 0) {
+              firstAuthorId = name;
+              firstAuthorUrl = a['ORCID'] != null ? a['ORCID'] : '';
+              if (a['affiliation'] != null && a['affiliation'].length > 0) {
+                firstAuthorBio = a['affiliation'][0]['name'] != null ? a['affiliation'][0]['name'] : '';
+              }
+            }
+          }
+        }
+      }
+      var authorStr = authors.length > 0 ? authors.join(', ') : 'Unknown Authors';
+
+      // 提取论文摘要
+      var abstractText = '';
+      if (item['abstract'] != null) {
+        abstractText = stripTags(item['abstract']);
+      }
+      if (abstractText == '') {
+        var container = '';
+        if (item['container-title'] != null && item['container-title'].length > 0) {
+          container = item['container-title'][0];
+        }
+        var publisher = item['publisher'] != null ? item['publisher'] : '';
+        abstractText = 'Published in: ' + (container.isNotEmpty ? container : publisher) + ' (Official Crossref Registered Record)';
+      }
+
+      var doi = item['DOI'] != null ? 'https://doi.org/' + item['DOI'] : (item['URL'] != null ? item['URL'] : 'doi_' + item.hashCode.toString());
+      var publisherName = item['publisher'] != null ? item['publisher'] : '';
+
+      results.add({
+        'id': doi,
+        'title': title,
+        'author': {
+          'id': firstAuthorId,
+          'name': authorStr,
+          'avatar': '',
+          'bio': firstAuthorBio,
+          'homeUrl': firstAuthorUrl,
+          'authorUrl': 'author:' + firstAuthorId,
+          'stats': {
+            'worksCount': 0
+          }
+        },
+        'abstract': abstractText,
+        'description': abstractText,
+        'intro': '🏛️ Publisher: ' + publisherName + '\n🔗 DOI: ' + doi + '\n\n' + abstractText,
+        'cover': item['cover'] != null ? item['cover'] : '',
+        'contentType': 'paper',
+        'published': doi
+      });
+    }
+    return results;
+  }
+
+  // 4. 学科探索分类
+  async fun explore(category, page, {config}) {
+    return await search(category, page, config: config);
+  }
+
+  // 5. 获取论文详情
+  async fun getDetail(paperId, {config}) {
+    return {
+      'id': paperId,
+      'title': 'Academic Publication ' + paperId,
+      'contentType': 'paper',
+      'chapters': [
+        {'id': '1', 'title': 'Full Publication Record & DOI Target'}
+      ]
+    };
+  }
+
+  // 6. 创作者档案
+  async fun getAuthorProfile(authorKey, {config}) {
+    return {
+      'id': authorKey,
+      'name': authorKey,
+      'avatar': '',
+      'banner': '',
+      'bio': 'Crossref Registered Researcher',
+      'homeUrl': authorKey.indexOf('http') == 0 ? authorKey : '',
+      'authorUrl': 'author:' + authorKey,
+      'stats': {
+        'worksCount': 0,
+        'followersCount': 0
+      }
+    };
+  }
+
+  // 7. 创作者作品流
+  async fun getAuthorWorks(authorKey, page, {config}) {
+    var offset = (page - 1) * 10;
+    var offsetStr = offset.toString();
+    var url = 'https://api.crossref.org/works?query.author=' + authorKey + '&rows=10&offset=' + offsetStr;
+    var resp = await client.get_req(url);
+
+    if (resp == null || resp.statusCode != 200 || resp.data == null || resp.data['message'] == null || resp.data['message']['items'] == null) {
+      return [];
+    }
+
+    var items = resp.data['message']['items'];
+    var results = [];
+    for (var i = 0; i < items.length; ++i) {
+      var item = items[i];
+      var title = (item['title'] != null && item['title'].length > 0) ? item['title'][0] : 'Untitled Paper';
+      var doi = item['DOI'] != null ? 'https://doi.org/' + item['DOI'] : (item['URL'] != null ? item['URL'] : 'work_' + item.hashCode.toString());
+      var abstractText = item['abstract'] != null ? stripTags(item['abstract']) : '';
+
+      results.add({
+        'id': doi,
+        'title': title,
+        'abstract': abstractText,
+        'description': abstractText,
+        'cover': item['cover'] != null ? item['cover'] : '',
+        'contentType': 'paper'
+      });
+    }
+    return results;
+  }
+}

@@ -1,0 +1,245 @@
+class Source {
+  var client;
+
+  construct {
+    client = HttpClient(baseOptions: HttpBaseOptions(
+      headers: {
+        'User-Agent': 'PyroMagma-SemanticScholar/1.0 (mailto:ai@pyromagma.org)',
+        'Accept': 'application/json'
+      }
+    ));
+  }
+
+  fun init(context) {}
+
+  // 1. 动态配置表单
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'api_key',
+        'type': 'password',
+        'label': 'Semantic Scholar API Key (Optional)',
+        'hint': 'Provide your personal API key for high rate limits'
+      }
+    ];
+  }
+
+  // 2. 学科探索分类
+  fun getExploreConfig() {
+    return [
+      {'id': 'foundation models', 'title': 'Foundation & World Models'},
+      {'id': 'reinforcement learning from human feedback', 'title': 'RLHF & Alignment'},
+      {'id': 'diffusion models', 'title': 'Diffusion & Generative Vision'},
+      {'id': 'mixture of experts', 'title': 'Mixture of Experts (MoE)'},
+      {'id': 'neural radiance fields', 'title': 'NeRF & 3D Gaussian Splatting'}
+    ];
+  }
+
+  // 3. 搜索 AI 与计算机科学文献（带完整摘要解析）
+  async fun search(query, page, {config}) {
+    var q = (query != null ? query : '').toString().trim();
+    if (q.indexOf('author:') == 0) {
+      var targetAuthorKey = q.substring(7);
+      return await getAuthorWorks(targetAuthorKey, page, config: config);
+    }
+
+    var offset = (page - 1) * 10;
+    var offsetStr = offset.toString();
+    var url = 'https://api.semanticscholar.org/graph/v1/paper/search?query=' + q + '&limit=10&offset=' + offsetStr + '&fields=title,authors,abstract,year,citationCount,venue,externalIds';
+    var resp = await client.get_req(url);
+
+    if (resp != null && resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
+      var items = resp.data['data'];
+      var results = [];
+      for (var i = 0; i < items.length; ++i) {
+        var item = items[i];
+        var title = item['title'] != null ? item['title'] : 'Untitled Paper';
+
+        var authors = [];
+        var firstAuthorId = 'author_unknown';
+        var firstAuthorUrl = '';
+        if (item['authors'] != null) {
+          for (var j = 0; j < item['authors'].length; ++j) {
+            var a = item['authors'][j];
+            if (a['name'] != null) {
+              authors.add(a['name']);
+              if (j == 0) {
+                firstAuthorId = a['authorId'] != null ? a['authorId'] : a['name'];
+                firstAuthorUrl = a['authorId'] != null ? 'https://www.semanticscholar.org/author/' + a['authorId'] : '';
+              }
+            }
+          }
+        }
+        var authorStr = authors.length > 0 ? authors.join(', ') : 'Semantic Scholar / AI2 Author';
+
+        // 提取论文摘要
+        var abstractText = '';
+        if (item['abstract'] != null && item['abstract'].isNotEmpty) {
+          abstractText = item['abstract'];
+        } else {
+          var venue = item['venue'] != null ? item['venue'] : 'Semantic Scholar Academic Index';
+          abstractText = 'AI/Computer Science publication indexed by Allen Institute for AI. Venue: ' + venue;
+        }
+
+        var paperId = item['paperId'] != null ? item['paperId'] : 'ss_' + item.hashCode.toString();
+        if (item['externalIds'] != null && item['externalIds']['DOI'] != null) {
+          paperId = 'https://doi.org/' + item['externalIds']['DOI'];
+        }
+
+        var year = item['year'] != null ? item['year'].toString() : '';
+        var citations = item['citationCount'] != null ? item['citationCount'].toString() : '0';
+        var venueName = item['venue'] != null ? item['venue'] : '';
+
+        results.add({
+          'id': paperId,
+          'title': title,
+          'author': {
+            'id': firstAuthorId,
+            'name': authorStr,
+            'avatar': '',
+            'bio': venueName,
+            'homeUrl': firstAuthorUrl,
+            'authorUrl': 'author:' + firstAuthorId,
+            'stats': {
+              'worksCount': 0
+            }
+          },
+          'abstract': abstractText,
+          'description': abstractText,
+          'intro': '🤖 Venue: ' + venueName + ' (' + year + ') | 🌟 Citations: ' + citations + '\n\n' + abstractText,
+          'cover': item['cover'] != null ? item['cover'] : '',
+          'contentType': 'paper',
+          'published': year
+        });
+      }
+      return results;
+    }
+
+    // 备用 OpenAlex 高可用回退
+    var pageStr = page.toString();
+    var fallbackUrl = 'https://api.openalex.org/works?search=' + q + '&per-page=10&page=' + pageStr;
+    var fbResp = await client.get_req(fallbackUrl);
+    if (fbResp != null && fbResp.statusCode == 200 && fbResp.data != null && fbResp.data['results'] != null) {
+      var fbItems = fbResp.data['results'];
+      var fbResults = [];
+      for (var k = 0; k < fbItems.length; ++k) {
+        var it = fbItems[k];
+        var title = it['title'] != null ? it['title'] : 'Untitled Paper';
+        var authors = [];
+        if (it['authorships'] != null) {
+          for (var a in it['authorships']) {
+            if (a['author'] != null && a['author']['display_name'] != null) {
+              authors.add(a['author']['display_name']);
+            }
+          }
+        }
+        var authorStr = authors.length > 0 ? authors.join(', ') : 'Semantic Scholar / AI2 Author';
+        var doi = it['doi'] != null ? it['doi'] : (it['id'] != null ? it['id'] : 'paper_' + it.hashCode.toString());
+
+        fbResults.add({
+          'id': doi,
+          'title': title,
+          'author': {
+            'id': authorStr,
+            'name': authorStr,
+            'avatar': '',
+            'bio': '',
+            'homeUrl': '',
+            'authorUrl': 'author:' + authorStr,
+            'stats': {
+              'worksCount': 0
+            }
+          },
+          'abstract': 'Semantic Scholar fallback indexed record.',
+          'description': 'Semantic Scholar fallback indexed record.',
+          'intro': 'Academic paper record from OpenAlex fallback.',
+          'cover': it['cover'] != null ? it['cover'] : '',
+          'contentType': 'paper',
+          'published': it['publication_date'] != null ? it['publication_date'] : ''
+        });
+      }
+      return fbResults;
+    }
+    return [];
+  }
+
+  // 4. 学科探索分类
+  async fun explore(category, page, {config}) {
+    return await search(category, page, config: config);
+  }
+
+  // 5. 获取论文详情
+  async fun getDetail(paperId, {config}) {
+    return {
+      'id': paperId,
+      'title': 'AI Publication ' + paperId,
+      'contentType': 'paper',
+      'chapters': [
+        {'id': '1', 'title': 'Full Text & Semantic Corpus'}
+      ]
+    };
+  }
+
+  // 6. 创作者档案
+  async fun getAuthorProfile(authorKey, {config}) {
+    var profileUrl = 'https://api.semanticscholar.org/graph/v1/author/' + authorKey + '?fields=name,affiliations,homepage,paperCount,citationCount';
+    var resp = await client.get_req(profileUrl);
+    if (resp != null && resp.statusCode == 200 && resp.data != null) {
+      var data = resp.data;
+      var aff = '';
+      if (data['affiliations'] != null && data['affiliations'].length > 0) {
+        aff = data['affiliations'][0];
+      }
+      return {
+        'id': data['authorId'] != null ? data['authorId'] : authorKey,
+        'name': data['name'] != null ? data['name'] : authorKey,
+        'avatar': '',
+        'banner': '',
+        'bio': aff,
+        'homeUrl': data['homepage'] != null ? data['homepage'] : '',
+        'authorUrl': 'author:' + authorKey,
+        'stats': {
+          'worksCount': data['paperCount'] != null ? data['paperCount'] : 0,
+          'followersCount': data['citationCount'] != null ? data['citationCount'] : 0
+        }
+      };
+    }
+
+    return {
+      'id': authorKey,
+      'name': authorKey,
+      'authorUrl': 'author:' + authorKey
+    };
+  }
+
+  // 7. 创作者作品流
+  async fun getAuthorWorks(authorKey, page, {config}) {
+    var offset = (page - 1) * 10;
+    var offsetStr = offset.toString();
+    var worksUrl = 'https://api.semanticscholar.org/graph/v1/author/' + authorKey + '/papers?limit=10&offset=' + offsetStr + '&fields=title,abstract,year,externalIds';
+    var resp = await client.get_req(worksUrl);
+    if (resp != null && resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
+      var items = resp.data['data'];
+      var results = [];
+      for (var i = 0; i < items.length; ++i) {
+        var item = items[i];
+        var title = item['title'] != null ? item['title'] : 'Untitled Paper';
+        var paperId = item['paperId'] != null ? item['paperId'] : 'work_' + item.hashCode.toString();
+        if (item['externalIds'] != null && item['externalIds']['DOI'] != null) {
+          paperId = 'https://doi.org/' + item['externalIds']['DOI'];
+        }
+
+        results.add({
+          'id': paperId,
+          'title': title,
+          'abstract': item['abstract'] != null ? item['abstract'] : '',
+          'description': item['abstract'] != null ? item['abstract'] : '',
+          'cover': item['cover'] != null ? item['cover'] : '',
+          'contentType': 'paper'
+        });
+      }
+      return results;
+    }
+    return [];
+  }
+}

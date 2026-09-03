@@ -1,0 +1,9 @@
+{
+  "id": "org.crossref.paper",
+  "name": "Crossref DOI Academic Source",
+  "version": "1.0.0",
+  "contentType": "paper",
+  "protocol": "hetu",
+  "entry": "source.ht",
+  "description": "全球官方权威 DOI 文献库，覆盖超1.5亿条期刊、会议与预印本出版物"
+}

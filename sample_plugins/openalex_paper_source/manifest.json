@@ -1,0 +1,9 @@
+{
+  "id": "org.openalex.paper",
+  "name": "OpenAlex Academic Papers",
+  "version": "1.0.0",
+  "contentType": "paper",
+  "protocol": "hetu",
+  "entry": "source.ht",
+  "description": "全球最大开源文献索引，收录2.5亿篇开放学术论文与引文图谱"
+}

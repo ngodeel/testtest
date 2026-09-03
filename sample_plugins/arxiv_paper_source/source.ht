@@ -1,0 +1,255 @@
+class Source {
+
+  var client;
+
+  construct {
+    client = HttpClient(baseOptions: HttpBaseOptions(
+      headers: {
+        'User-Agent': 'PyroMagma-Academic-Bot/1.0 (mailto:openaccess@pyromagma.org)',
+        'Accept': 'application/json'
+      }
+    ));
+  }
+
+  fun init(context) {}
+
+  // 1. 动态配置表单 Schema
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'email',
+        'type': 'text',
+        'label': 'Contact Email (Polite Pool)',
+        'default': 'openaccess@pyromagma.org',
+        'hint': 'Providing your email speeds up OpenAlex queries'
+      },
+      {
+        'key': 'is_oa_only',
+        'type': 'bool',
+        'label': 'Open Access Only',
+        'default': true,
+        'hint': 'Only show freely accessible literature'
+      }
+    ];
+  }
+
+  // 2. 探索分类
+  fun getExploreConfig() {
+    return [
+      {'id': 'artificial intelligence', 'title': 'Artificial Intelligence (AI)'},
+      {'id': 'machine learning', 'title': 'Machine Learning (ML)'},
+      {'id': 'quantum computing', 'title': 'Quantum Computing'},
+      {'id': 'bioinformatics', 'title': 'Bioinformatics & Genetics'},
+      {'id': 'large language models', 'title': 'Large Language Models (LLM)'},
+      {'id': 'neuroscience', 'title': 'Neuroscience & Brain-Computer'}
+    ];
+  }
+
+  /// 还原倒排索引摘要
+  fun reconstructAbstract(invertedIndex) {
+    if (invertedIndex == null) return '';
+    var wordList = [];
+    var keys = invertedIndex.keys;
+    for (var k in keys) {
+      var positions = invertedIndex[k];
+      if (positions != null) {
+        for (var p in positions) {
+          wordList.add({'pos': p, 'word': k});
+        }
+      }
+    }
+    if (wordList.length == 0) return '';
+    for (var i = 0; i < wordList.length; ++i) {
+      for (var j = i + 1; j < wordList.length; ++j) {
+        if (wordList[i]['pos'] > wordList[j]['pos']) {
+          var temp = wordList[i];
+          wordList[i] = wordList[j];
+          wordList[j] = temp;
+        }
+      }
+    }
+    var words = [];
+    for (var w in wordList) {
+      words.add(w['word']);
+    }
+    return words.join(' ');
+  }
+
+  // 3. 通用搜索入口
+  async fun search(query, page, {config}) {
+    var q = (query != null ? query : '').toString().trim();
+    if (q.indexOf('author:') == 0) {
+      var targetAuthorKey = q.substring(7);
+      return await getAuthorWorks(targetAuthorKey, page, config: config);
+    }
+
+    var cfg = config != null ? config : {};
+    var email = cfg['email'] != null ? cfg['email'] : 'openaccess@pyromagma.org';
+    var pageStr = page.toString();
+    var openAlexUrl = 'https://api.openalex.org/works?search=' + q + '&per-page=10&page=' + pageStr + '&mailto=' + email;
+    var resp = await client.get_req(openAlexUrl);
+
+    if (resp.statusCode == 200 && resp.data != null && resp.data['results'] != null) {
+      var items = resp.data['results'];
+      if (items.length > 0) {
+        var results = [];
+        for (var i = 0; i < items.length; ++i) {
+          var item = items[i];
+          var title = item['title'] != null ? item['title'] : 'Untitled Academic Paper';
+          
+          var authorStr = 'Unknown Researchers';
+          var firstAuthorId = 'author_unknown';
+          var firstAuthorUrl = '';
+          var firstAuthorAffiliation = '';
+
+          if (item['authorships'] != null && item['authorships'].length > 0) {
+            var names = [];
+            for (var j = 0; j < item['authorships'].length; ++j) {
+              var auth = item['authorships'][j];
+              if (auth['author'] != null && auth['author']['display_name'] != null) {
+                var displayName = auth['author']['display_name'];
+                names.add(displayName);
+                if (j == 0) {
+                  firstAuthorId = auth['author']['id'] != null ? auth['author']['id'] : displayName;
+                  firstAuthorUrl = auth['author']['id'] != null ? auth['author']['id'] : '';
+                  if (auth['institutions'] != null && auth['institutions'].length > 0) {
+                    firstAuthorAffiliation = auth['institutions'][0]['display_name'] != null ? auth['institutions'][0]['display_name'] : '';
+                  }
+                }
+              }
+            }
+            if (names.length > 0) {
+              authorStr = names.join(', ');
+            }
+          }
+
+          var doi = item['doi'] != null ? item['doi'] : (item['id'] != null ? item['id'] : 'doi_' + item.hashCode.toString());
+          var yearStr = item['publication_year'] != null ? item['publication_year'].toString() : '';
+          var citeStr = item['cited_by_count'] != null ? item['cited_by_count'].toString() : '0';
+
+          var abstractText = reconstructAbstract(item['abstract_inverted_index']);
+          if (abstractText == '' && item['concepts'] != null) {
+            var cList = [];
+            for (var c in item['concepts']) {
+              if (c['display_name'] != null) cList.add(c['display_name']);
+            }
+            if (cList.length > 0) {
+              abstractText = 'Core Focus: ' + cList.join(', ');
+            }
+          }
+          if (abstractText == '') {
+            abstractText = 'Open access academic index record for ' + title;
+          }
+
+          results.add({
+            'id': doi,
+            'title': title,
+            'author': {
+              'id': firstAuthorId,
+              'name': authorStr,
+              'avatar': '',
+              'bio': firstAuthorAffiliation,
+              'homeUrl': firstAuthorUrl,
+              'authorUrl': 'author:' + firstAuthorId,
+              'stats': {
+                'worksCount': 0
+              }
+            },
+            'abstract': abstractText,
+            'description': abstractText,
+            'intro': '📅 Year: ' + yearStr + ' | 📈 Citations: ' + citeStr + '\n\n' + abstractText,
+            'cover': item['cover'] != null ? item['cover'] : '',
+            'contentType': 'paper',
+
+            'published': item['publication_date'] != null ? item['publication_date'] : ''
+          });
+        }
+        return results;
+      }
+    }
+
+    return [];
+  }
+
+  // 4. 探索分类
+  async fun explore(category, page, {config}) {
+    return await search(category, page, config: config);
+  }
+
+  // 5. 作品详情
+  async fun getDetail(paperId, {config}) {
+    return {
+      'id': paperId,
+      'title': 'Academic Publication ' + paperId,
+      'contentType': 'paper',
+      'chapters': [
+        {'id': '1', 'title': 'Full Text & Citation Links (DOI Target)'}
+      ]
+    };
+  }
+
+  // 6. 创作者档案详情
+  async fun getAuthorProfile(authorKey, {config}) {
+    var key = authorKey.toString().replaceAll('https://openalex.org/', '');
+    var profileUrl = 'https://api.openalex.org/authors/' + key;
+    var resp = await client.get_req(profileUrl);
+    if (resp != null && resp.statusCode == 200 && resp.data != null) {
+      var data = resp.data;
+      var affiliation = '';
+      if (data['last_known_institutions'] != null && data['last_known_institutions'].length > 0) {
+        affiliation = data['last_known_institutions'][0]['display_name'];
+      }
+      return {
+        'id': data['id'],
+        'name': data['display_name'],
+        'avatar': '',
+        'banner': '',
+        'bio': affiliation != null ? affiliation : '',
+        'homeUrl': data['id'],
+        'authorUrl': 'author:' + data['id'],
+        'stats': {
+          'worksCount': data['works_count'] != null ? data['works_count'] : 0,
+          'followersCount': data['cited_by_count'] != null ? data['cited_by_count'] : 0
+        }
+      };
+    }
+
+    return {
+      'id': authorKey,
+      'name': authorKey,
+      'authorUrl': 'author:' + authorKey
+    };
+  }
+
+  // 7. 创作者作品流
+  async fun getAuthorWorks(authorKey, page, {config}) {
+    var key = authorKey.toString().replaceAll('https://openalex.org/', '');
+    var pageStr = page.toString();
+    var worksUrl = 'https://api.openalex.org/works?filter=author.id:' + key + '&per-page=10&page=' + pageStr;
+    var resp = await client.get_req(worksUrl);
+    if (resp != null && resp.statusCode == 200 && resp.data != null && resp.data['results'] != null) {
+      var items = resp.data['results'];
+      var results = [];
+      for (var i = 0; i < items.length; ++i) {
+        var item = items[i];
+        var title = item['title'] != null ? item['title'] : 'Untitled Paper';
+        var doi = item['doi'] != null ? item['doi'] : (item['id'] != null ? item['id'] : 'work_' + item.hashCode.toString());
+        var abstractText = reconstructAbstract(item['abstract_inverted_index']);
+
+        results.add({
+          'id': doi,
+          'title': title,
+          'abstract': abstractText,
+          'description': abstractText,
+          'cover': item['cover'] != null ? item['cover'] : '',
+          'contentType': 'paper'
+        });
+      }
+      return results;
+    }
+
+    return [];
+  }
+}
+
+
