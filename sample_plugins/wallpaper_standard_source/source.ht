@@ -1,17 +1,45 @@
+import 'module:http' as http;
+import 'module:host_webview' as webview;
+import 'module:user' as user;
+import 'module:storage' as storage;
+
+var HttpClient = http.HttpClient;
+var HttpBaseOptions = http.HttpBaseOptions;
+var HttpResponse = http.HttpResponse;
+var Webview = webview.Webview;
+
 class Source {
+  var id = 'org.pyromagma.wallpaper.standard';
+  var name = 'Standard Wallpaper Source';
+  var version = '1.0.0';
+  var author = 'PyroMagma Team';
+  var description = '基于标准契约实现的壁纸/图片检索插件';
+  var icon = '';
 
   var client;
 
-  construct {
-    client = HttpClient(baseOptions: HttpBaseOptions(
-      headers: {
-        'User-Agent': 'PyroMagma-Wallpaper-Bot/1.0',
-        'Accept': 'application/json'
-      }
-    ));
+  fun manifest() {
+    return {
+      'id': id,
+      'name': name,
+      'version': version,
+      'description': description,
+      'author': author,
+      'icon': icon,
+      'languages': ['en'],
+      'default_language': 'en'
+    };
   }
 
-  fun init(context) {}
+  fun init(context) {
+    var options = HttpBaseOptions(
+      headers: {
+        'user-agent': Webview.getUserAgent(),
+        'accept': 'application/json'
+      }
+    );
+    client = HttpClient(options);
+  }
 
   // 1. 动态配置表单 Schema
   fun getConfigSchema() {
@@ -28,7 +56,7 @@ class Source {
         'type': 'text',
         'label': 'Purity (100/110/111)',
         'default': '100',
-        'hint': 'SFW / Sketchy / NSFW'
+        'hint': '100 (SFW), 110 (Sketchy), 111 (All)'
       }
     ];
   }
@@ -47,8 +75,10 @@ class Source {
 
   // 3. 通用搜索入口
   async fun search(query, page, {config}) {
+    if (client == null) init(null);
+
     var q = (query != null ? query : '').toString().trim();
-    if (q == '') q = 'nature';
+    if (q == '' || q == 'random') q = 'nature';
 
     var cfg = config != null ? config : {};
     var apiKey = cfg['api_key'] != null ? cfg['api_key'] : '';
@@ -62,23 +92,45 @@ class Source {
 
     var resp = await client.get_req(url);
 
-    if (resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
+    if (resp != null && resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
       var items = resp.data['data'];
       var results = [];
       for (var i = 0; i < items.length; ++i) {
         var item = items[i];
 
+        var uploaderName = 'Wallhaven Creator';
+        var uploaderAvatar = '';
+        var uploaderHome = 'https://wallhaven.cc';
+        if (item['uploader'] != null) {
+          if (item['uploader']['username'] != null) {
+            uploaderName = item['uploader']['username'];
+            uploaderHome = 'https://wallhaven.cc/user/' + uploaderName;
+          }
+          if (item['uploader']['avatar'] != null && item['uploader']['avatar']['200px'] != null) {
+            uploaderAvatar = item['uploader']['avatar']['200px'];
+          }
+        }
+
+        var thumbUrl = item['path'];
+        if (item['thumbs'] != null) {
+          if (item['thumbs']['large'] != null) {
+            thumbUrl = item['thumbs']['large'];
+          } else if (item['thumbs']['original'] != null) {
+            thumbUrl = item['thumbs']['original'];
+          }
+        }
+
         results.add({
-          'id': item['id'],
-          'title': 'Wallpaper ' + item['id'],
+          'id': item['id'].toString(),
+          'title': 'Wallpaper ' + item['id'].toString(),
           'url': item['path'],
-          'thumbnail': item['thumbs']['large'] != null ? item['thumbs']['large'] : item['path'],
+          'thumbnail': thumbUrl,
           'author': {
-            'id': item['uploader']['username'],
-            'name': item['uploader']['username'],
-            'avatar': item['uploader']['avatar'] != null ? item['uploader']['avatar'] : '',
+            'id': uploaderName,
+            'name': uploaderName,
+            'avatar': uploaderAvatar,
             'bio': 'Wallhaven Creator',
-            'homeUrl': 'https://wallhaven.cc/user/' + item['uploader']['username']
+            'homeUrl': uploaderHome
           },
           'originUrl': item['url'],
           'tags': item['tags'] != null ? item['tags'] : [],
@@ -95,6 +147,8 @@ class Source {
 
   // 4. 探索分类
   async fun explore(category, page, {config}) {
+    if (client == null) init(null);
+
     var sort = 'date_added';
     var q = '';
     if (category == 'toplist') sort = 'toplist';
@@ -103,26 +157,46 @@ class Source {
 
     var cfg = config != null ? config : {};
     var apiKey = cfg['api_key'] != null ? cfg['api_key'] : '';
+    var purity = cfg['purity'] != null ? cfg['purity'] : '100';
     var pageStr = page.toString();
 
-    var url = 'https://wallhaven.cc/api/v1/search?sorting=' + sort + '&page=' + pageStr;
+    var url = 'https://wallhaven.cc/api/v1/search?sorting=' + sort + '&page=' + pageStr + '&purity=' + purity;
     if (q != '') url = url + '&q=' + q;
     if (apiKey != '') url = url + '&apikey=' + apiKey;
 
     var resp = await client.get_req(url);
-    if (resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
-      // 解析逻辑同 search...
+    if (resp != null && resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
       var items = resp.data['data'];
       var results = [];
       for (var i = 0; i < items.length; ++i) {
         var item = items[i];
+
+        var uploaderName = 'Wallhaven Creator';
+        var uploaderAvatar = '';
+        if (item['uploader'] != null) {
+          if (item['uploader']['username'] != null) uploaderName = item['uploader']['username'];
+          if (item['uploader']['avatar'] != null && item['uploader']['avatar']['200px'] != null) {
+            uploaderAvatar = item['uploader']['avatar']['200px'];
+          }
+        }
+
+        var thumbUrl = item['path'];
+        if (item['thumbs'] != null) {
+          if (item['thumbs']['large'] != null) {
+            thumbUrl = item['thumbs']['large'];
+          } else if (item['thumbs']['original'] != null) {
+            thumbUrl = item['thumbs']['original'];
+          }
+        }
+
         results.add({
-          'id': item['id'],
+          'id': item['id'].toString(),
+          'title': 'Wallpaper ' + item['id'].toString(),
           'url': item['path'],
-          'thumbnail': item['thumbs']['large'],
+          'thumbnail': thumbUrl,
           'author': {
-            'name': item['uploader']['username'],
-            'avatar': item['uploader']['avatar']
+            'name': uploaderName,
+            'avatar': uploaderAvatar
           },
           'originUrl': item['url'],
           'contentType': 'wallpaper'
@@ -135,32 +209,43 @@ class Source {
 
   // 5. 图片详情
   async fun getDetail(wallpaperId, {config}) {
-    var url = 'https://wallhaven.cc/api/v1/w/' + wallpaperId;
+    if (client == null) init(null);
+
+    var url = 'https://wallhaven.cc/api/v1/w/' + wallpaperId.toString();
     var resp = await client.get_req(url);
     if (resp != null && resp.statusCode == 200 && resp.data != null) {
        var item = resp.data['data'];
+       var uploaderName = 'Wallhaven Creator';
+       var uploaderAvatar = '';
+       if (item['uploader'] != null) {
+         if (item['uploader']['username'] != null) uploaderName = item['uploader']['username'];
+         if (item['uploader']['avatar'] != null && item['uploader']['avatar']['200px'] != null) {
+           uploaderAvatar = item['uploader']['avatar']['200px'];
+         }
+       }
+
        return {
-         'id': wallpaperId,
-         'title': 'Wallpaper ' + wallpaperId,
+         'id': wallpaperId.toString(),
+         'title': 'Wallpaper ' + wallpaperId.toString(),
          'url': item['path'],
          'author': {
-            'name': item['uploader']['username'],
-            'avatar': item['uploader']['avatar']
+            'name': uploaderName,
+            'avatar': uploaderAvatar
          },
-         'tags': item['tags'],
-         'description': 'Resolution: ' + item['resolution'] + ' | Size: ' + item['file_size'].toString(),
+         'tags': item['tags'] != null ? item['tags'] : [],
+         'description': 'Resolution: ' + (item['resolution'] != null ? item['resolution'].toString() : '') + ' | Size: ' + (item['file_size'] != null ? item['file_size'].toString() : ''),
          'contentType': 'wallpaper'
        };
     }
     return null;
   }
 
-  // 6. 创作者 (图片上传者) 详情
+  // 6. 创作者详情
   async fun getAuthorProfile(username, {config}) {
     return {
-      'id': username,
-      'name': username,
-      'authorUrl': 'https://wallhaven.cc/user/' + username
+      'id': username.toString(),
+      'name': username.toString(),
+      'authorUrl': 'https://wallhaven.cc/user/' + username.toString()
     };
   }
 
@@ -169,3 +254,5 @@ class Source {
     return await search(username, page, config: config);
   }
 }
+
+export { Source }

@@ -1,0 +1,130 @@
+import 'module:http' as http;
+import 'module:host_webview' as webview;
+import 'module:user' as user;
+import 'module:storage' as storage;
+
+var HttpClient = http.HttpClient;
+var HttpBaseOptions = http.HttpBaseOptions;
+var HttpResponse = http.HttpResponse;
+var Webview = webview.Webview;
+
+class Source {
+  var id = 'org.pyromagma.wallpaper.bing';
+  var name = 'Bing Daily Wallpaper Source';
+  var version = '1.0.0';
+  var author = 'PyroMagma Team';
+  var description = '必应每日高清壁纸数据源，支持按日期探索与高清大图预览';
+  var icon = 'https://cn.bing.com/favicon.ico';
+
+  var client;
+
+  fun manifest() {
+    return {
+      'id': id,
+      'name': name,
+      'version': version,
+      'description': description,
+      'author': author,
+      'icon': icon,
+      'languages': ['en', 'zh'],
+      'default_language': 'zh'
+    };
+  }
+
+  fun init(context) {
+    var options = HttpBaseOptions(
+      headers: {
+        'user-agent': Webview.getUserAgent(),
+        'accept': 'application/json'
+      }
+    );
+    client = HttpClient(options);
+  }
+
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'mkt',
+        'type': 'text',
+        'label': 'Market (zh-CN / en-US / ja-JP)',
+        'default': 'zh-CN',
+        'hint': 'Market code for Bing Daily Images'
+      },
+      {
+        'key': 'resolution',
+        'type': 'text',
+        'label': 'Resolution (UHD / 1920x1080)',
+        'default': 'UHD',
+        'hint': 'Image resolution'
+      }
+    ];
+  }
+
+  fun getExploreConfig() {
+    return [
+      {'id': 'daily', 'title': 'Bing Daily Wallpapers'},
+      {'id': 'archive', 'title': 'Historical Archives'}
+    ];
+  }
+
+  async fun search(query, page, {config}) {
+    if (client == null) init(null);
+    if (page > 1) return [];
+
+    var mkt = 'zh-CN';
+    var resolution = 'UHD';
+    if (config != null) {
+      if (config['mkt'] != null && config['mkt'] != '') mkt = config['mkt'];
+      if (config['resolution'] != null && config['resolution'] != '') resolution = config['resolution'];
+    }
+
+    var url = 'https://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=' + mkt;
+    var res = await client.get_req(url);
+
+    if (res != null && res.statusCode == 200 && res.data != null && res.data['images'] != null) {
+      var images = res.data['images'];
+      var results = [];
+      for (var i = 0; i < images.length; i++) {
+        var item = images[i];
+        var host = 'https://cn.bing.com';
+        var urlBase = item['urlbase'];
+        var fullUrl = host + urlBase + '_' + resolution + '.jpg';
+
+        var titleStr = 'Bing Daily Wallpaper';
+        if (item['copyright'] != null) titleStr = item['copyright'];
+        if (item['title'] != null && item['title'] != '') titleStr = item['title'];
+
+        results.add({
+          'id': item['hsh'] != null ? item['hsh'].toString() : i.toString(),
+          'title': titleStr,
+          'url': fullUrl,
+          'thumbnail': host + item['url'],
+          'author': {
+            'id': 'microsoft_bing',
+            'name': 'Microsoft Bing',
+            'avatar': 'https://cn.bing.com/favicon.ico',
+            'bio': 'Official Bing Wallpaper Team',
+            'homeUrl': 'https://bing.com'
+          },
+          'originUrl': item['copyrightlink'] != null ? item['copyrightlink'] : 'https://bing.com',
+          'tags': ['Bing', 'Nature', 'Daily'],
+          'contentType': 'wallpaper',
+          'category': 'Bing Daily',
+          'published': item['startdate']
+        });
+      }
+      return results;
+    }
+    return [];
+  }
+
+  async fun explore(category, page, {config}) {
+    return await search('', page, config: config);
+  }
+
+  async fun getDetail(wallpaperId, {config}) {
+    return null;
+  }
+}
+
+export { Source }
