@@ -1,0 +1,171 @@
+class Source {
+
+  var client;
+
+  construct {
+    client = HttpClient(baseOptions: HttpBaseOptions(
+      headers: {
+        'User-Agent': 'PyroMagma-Wallpaper-Bot/1.0',
+        'Accept': 'application/json'
+      }
+    ));
+  }
+
+  fun init(context) {}
+
+  // 1. 动态配置表单 Schema
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'api_key',
+        'type': 'text',
+        'label': 'Wallhaven API Key',
+        'default': '',
+        'hint': 'Optional: Providing an API key allows access to NSFW/SFW filtering'
+      },
+      {
+        'key': 'purity',
+        'type': 'text',
+        'label': 'Purity (100/110/111)',
+        'default': '100',
+        'hint': 'SFW / Sketchy / NSFW'
+      }
+    ];
+  }
+
+  // 2. 探索分类
+  fun getExploreConfig() {
+    return [
+      {'id': 'latest', 'title': 'Latest Wallpapers'},
+      {'id': 'toplist', 'title': 'Top Rated'},
+      {'id': 'random', 'title': 'Random Discovery'},
+      {'id': 'nature', 'title': 'Nature & Landscapes'},
+      {'id': 'abstract', 'title': 'Abstract Art'},
+      {'id': 'cyberpunk', 'title': 'Cyberpunk Style'}
+    ];
+  }
+
+  // 3. 通用搜索入口
+  async fun search(query, page, {config}) {
+    var q = (query != null ? query : '').toString().trim();
+    if (q == '') q = 'nature';
+
+    var cfg = config != null ? config : {};
+    var apiKey = cfg['api_key'] != null ? cfg['api_key'] : '';
+    var purity = cfg['purity'] != null ? cfg['purity'] : '100';
+    var pageStr = page.toString();
+
+    var url = 'https://wallhaven.cc/api/v1/search?q=' + q + '&page=' + pageStr + '&purity=' + purity;
+    if (apiKey != '') {
+      url = url + '&apikey=' + apiKey;
+    }
+
+    var resp = await client.get_req(url);
+
+    if (resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
+      var items = resp.data['data'];
+      var results = [];
+      for (var i = 0; i < items.length; ++i) {
+        var item = items[i];
+
+        results.add({
+          'id': item['id'],
+          'title': 'Wallpaper ' + item['id'],
+          'url': item['path'],
+          'thumbnail': item['thumbs']['large'] != null ? item['thumbs']['large'] : item['path'],
+          'author': {
+            'id': item['uploader']['username'],
+            'name': item['uploader']['username'],
+            'avatar': item['uploader']['avatar'] != null ? item['uploader']['avatar'] : '',
+            'bio': 'Wallhaven Creator',
+            'homeUrl': 'https://wallhaven.cc/user/' + item['uploader']['username']
+          },
+          'originUrl': item['url'],
+          'tags': item['tags'] != null ? item['tags'] : [],
+          'contentType': 'wallpaper',
+          'category': item['category'],
+          'published': item['created_at']
+        });
+      }
+      return results;
+    }
+
+    return [];
+  }
+
+  // 4. 探索分类
+  async fun explore(category, page, {config}) {
+    var sort = 'date_added';
+    var q = '';
+    if (category == 'toplist') sort = 'toplist';
+    else if (category == 'random') sort = 'random';
+    else if (category != 'latest') q = category;
+
+    var cfg = config != null ? config : {};
+    var apiKey = cfg['api_key'] != null ? cfg['api_key'] : '';
+    var pageStr = page.toString();
+
+    var url = 'https://wallhaven.cc/api/v1/search?sorting=' + sort + '&page=' + pageStr;
+    if (q != '') url = url + '&q=' + q;
+    if (apiKey != '') url = url + '&apikey=' + apiKey;
+
+    var resp = await client.get_req(url);
+    if (resp.statusCode == 200 && resp.data != null && resp.data['data'] != null) {
+      // 解析逻辑同 search...
+      var items = resp.data['data'];
+      var results = [];
+      for (var i = 0; i < items.length; ++i) {
+        var item = items[i];
+        results.add({
+          'id': item['id'],
+          'url': item['path'],
+          'thumbnail': item['thumbs']['large'],
+          'author': {
+            'name': item['uploader']['username'],
+            'avatar': item['uploader']['avatar']
+          },
+          'originUrl': item['url'],
+          'contentType': 'wallpaper'
+        });
+      }
+      return results;
+    }
+    return [];
+  }
+
+  // 5. 图片详情
+  async fun getDetail(wallpaperId, {config}) {
+    var url = 'https://wallhaven.cc/api/v1/w/' + wallpaperId;
+    var resp = await client.get_req(url);
+    if (resp != null && resp.statusCode == 200 && resp.data != null) {
+       var item = resp.data['data'];
+       return {
+         'id': wallpaperId,
+         'title': 'Wallpaper ' + wallpaperId,
+         'url': item['path'],
+         'author': {
+            'name': item['uploader']['username'],
+            'avatar': item['uploader']['avatar']
+         },
+         'tags': item['tags'],
+         'description': 'Resolution: ' + item['resolution'] + ' | Size: ' + item['file_size'].toString(),
+         'contentType': 'wallpaper'
+       };
+    }
+    return null;
+  }
+
+  // 6. 创作者 (图片上传者) 详情
+  async fun getAuthorProfile(username, {config}) {
+    return {
+      'id': username,
+      'name': username,
+      'authorUrl': 'https://wallhaven.cc/user/' + username
+    };
+  }
+
+  // 7. 创作者作品流
+  async fun getAuthorWorks(username, page, {config}) {
+    return await search(username, page, config: config);
+  }
+}
