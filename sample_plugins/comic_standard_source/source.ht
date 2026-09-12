@@ -1,0 +1,169 @@
+import 'module:http' as http;
+import 'module:host_webview' as webview;
+import 'module:user' as user;
+import 'module:storage' as storage;
+
+var HttpClient = http.HttpClient;
+var HttpBaseOptions = http.HttpBaseOptions;
+var HttpResponse = http.HttpResponse;
+var Webview = webview.Webview;
+
+class Source {
+  var id = 'org.pyromagma.comic.standard';
+  var name = 'Standard Manga & Comic Source';
+  var version = '1.0.0';
+  var author = 'PyroMagma Team';
+  var description = '标准漫画/连环画样本插件，支持章节目录与漫画页列表提取，方便连环画阅读器测试';
+  var icon = 'https://picsum.photos/200/200';
+
+  var client;
+
+  fun manifest() {
+    return {
+      'id': id,
+      'name': name,
+      'version': version,
+      'description': description,
+      'author': author,
+      'icon': icon,
+      'languages': ['en', 'zh'],
+      'default_language': 'zh'
+    };
+  }
+
+  fun init(context) {
+    var options = HttpBaseOptions(
+      headers: {
+        'user-agent': Webview.getUserAgent(),
+        'accept': 'application/json'
+      }
+    );
+    client = HttpClient(options);
+  }
+
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'manga_style',
+        'type': 'text',
+        'label': 'Manga Style (Action / Cyberpunk / Fantasy)',
+        'default': 'Cyberpunk',
+        'hint': 'Style filter for test comics'
+      }
+    ];
+  }
+
+  fun getExploreConfig() {
+    return [
+      {'id': 'featured', 'title': 'Hot Manga Releases'},
+      {'id': 'action', 'title': 'Action & Adventure'},
+      {'id': 'sci-fi', 'title': 'Cyberpunk & Sci-Fi'},
+      {'id': 'classic', 'title': 'Classic Comics'}
+    ];
+  }
+
+  async fun search(query, page, {config}) {
+    var q = (query != null ? query : '').toString().trim();
+    if (q == '') q = 'Cybermanga Chronicles';
+
+    var results = [
+      {
+        'id': 'comic_cyber_01',
+        'title': 'Cybermanga Chronicles Vol. 1',
+        'cover': 'https://picsum.photos/id/1062/600/900',
+        'thumbnail': 'https://picsum.photos/id/1062/300/450',
+        'author': {
+          'id': 'mangaka_shiro',
+          'name': 'Shiro Kuroba',
+          'avatar': 'https://picsum.photos/id/1027/200/200',
+          'bio': 'Award-winning Cyberpunk Mangaka',
+          'homeUrl': 'https://mangaka.org/shiro',
+          'stats': {
+            'worksCount': 8,
+            'readsCount': 450000,
+            'followersCount': 18900
+          }
+        },
+        'description': 'In Neo-Tokyo 2099, a young hacker discovers a neural scroll that alters human perception...',
+        'status': 'Ongoing',
+        'category': 'Sci-Fi',
+        'contentType': 'comic',
+        'chapters': [
+          {'id': 'ch_01', 'title': 'Chapter 1: The Neural Awakening', 'pageCount': 12},
+          {'id': 'ch_02', 'title': 'Chapter 2: Sub-Level Cyber City', 'pageCount': 15},
+          {'id': 'ch_03', 'title': 'Chapter 3: Quantum Decoupling', 'pageCount': 18}
+        ]
+      },
+      {
+        'id': 'comic_fantasy_02',
+        'title': 'Legend of the Astro Blade',
+        'cover': 'https://picsum.photos/id/1025/600/900',
+        'thumbnail': 'https://picsum.photos/id/1025/300/450',
+        'author': {
+          'id': 'mangaka_ken',
+          'name': 'Kenji Takahashi',
+          'avatar': 'https://picsum.photos/id/1005/200/200',
+          'bio': 'Fantasy & Sci-Fi Illustrator',
+          'homeUrl': 'https://mangaka.org/kenji',
+          'stats': {
+            'worksCount': 5,
+            'readsCount': 230000,
+            'followersCount': 12400
+          }
+        },
+        'description': 'Ancient swordmasters harness starlight particles to fight dimensional rift beasts.',
+        'status': 'Completed',
+        'category': 'Fantasy',
+        'contentType': 'comic',
+        'chapters': [
+          {'id': 'ch_01', 'title': 'Chapter 1: Starlight Inheritance', 'pageCount': 10}
+        ]
+      }
+    ];
+
+    return results;
+  }
+
+  async fun explore(category, page, {config}) {
+    return await search(category, page, config: config);
+  }
+
+  async fun getDetail(comicId, {config}) {
+    return {
+      'id': comicId.toString(),
+      'title': 'Cybermanga Chronicles Vol. 1',
+      'cover': 'https://picsum.photos/id/1062/600/900',
+      'author': {
+        'name': 'Shiro Kuroba',
+        'avatar': 'https://picsum.photos/id/1027/200/200'
+      },
+      'description': 'In Neo-Tokyo 2099, a young hacker discovers a neural scroll that alters human perception...',
+      'contentType': 'comic',
+      'chapters': [
+        {'id': 'ch_01', 'title': 'Chapter 1: The Neural Awakening', 'pageCount': 12},
+        {'id': 'ch_02', 'title': 'Chapter 2: Sub-Level Cyber City', 'pageCount': 15}
+      ],
+      'pages': [
+        'https://picsum.photos/id/1015/800/1200',
+        'https://picsum.photos/id/1018/800/1200',
+        'https://picsum.photos/id/1019/800/1200',
+        'https://picsum.photos/id/1020/800/1200',
+        'https://picsum.photos/id/1024/800/1200'
+      ]
+    };
+  }
+
+  async fun getAuthorProfile(username, {config}) {
+    return {
+      'id': username.toString(),
+      'name': username.toString(),
+      'bio': 'Popular Mangaka'
+    };
+  }
+
+  async fun getAuthorWorks(username, page, {config}) {
+    return await search(username, page, config: config);
+  }
+}
+
+export { Source }

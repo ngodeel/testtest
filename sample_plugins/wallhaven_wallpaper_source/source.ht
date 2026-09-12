@@ -1,0 +1,200 @@
+import 'module:http' as http;
+import 'module:host_webview' as webview;
+import 'module:user' as user;
+import 'module:storage' as storage;
+
+var HttpClient = http.HttpClient;
+var HttpBaseOptions = http.HttpBaseOptions;
+var HttpResponse = http.HttpResponse;
+var Webview = webview.Webview;
+
+class Source {
+  var id = 'org.pyromagma.wallpaper.wallhaven';
+  var name = 'Wallhaven HD Source';
+  var version = '1.0.0';
+  var author = 'PyroMagma Team';
+  var description = '全球最大二次元与风景高清壁纸库 Wallhaven 衍生插件';
+  var icon = 'https://wallhaven.cc/favicon.ico';
+
+  var client;
+
+  fun manifest() {
+    return {
+      'id': id,
+      'name': name,
+      'version': version,
+      'description': description,
+      'author': author,
+      'icon': icon,
+      'languages': ['en'],
+      'default_language': 'en'
+    };
+  }
+
+  fun init(context) {
+    var options = HttpBaseOptions(
+      headers: {
+        'user-agent': Webview.getUserAgent(),
+        'accept': 'application/json'
+      }
+    );
+    client = HttpClient(options);
+  }
+
+  fun getConfigSchema() {
+    return [
+      {
+        "key": "api_key",
+        "type": "text",
+        "label": "Wallhaven API Key",
+        "default": "",
+        "hint": "Optional: Wallhaven API Key for SFW/NSFW filters"
+      },
+      {
+        "key": "sorting",
+        "type": "text",
+        "label": "Sorting (toplist / random / date_added)",
+        "default": "toplist",
+        "hint": "Default sort order"
+      },
+      {
+        "key": "purity",
+        "type": "text",
+        "label": "Purity (100 / 110 / 111)",
+        "default": "100",
+        "hint": "100 (SFW), 110 (Sketchy), 111 (All)"
+      }
+    ];
+  }
+
+  fun getExploreConfig() {
+    return [
+      {'id': 'toplist', 'title': 'Top Rated Wallpapers'},
+      {'id': 'random', 'title': 'Random Discovery'},
+      {'id': 'date_added', 'title': 'Latest Releases'},
+      {'id': 'views', 'title': 'Most Viewed'}
+    ];
+  }
+
+  async fun search(query, page, {config}) {
+    if (client == null) init(null);
+    var baseUrl = 'https://wallhaven.cc/api/v1/search';
+
+    var params = {
+      'page': page.toString(),
+      'q': (query == 'random' || query == null) ? '' : query.toString(),
+    };
+
+    if (config != null) {
+       if (config['api_key'] != null && config['api_key'] != '') params['apikey'] = config['api_key'];
+       if (config['sorting'] != null && config['sorting'] != '') params['sorting'] = config['sorting'];
+       if (config['purity'] != null && config['purity'] != '') params['purity'] = config['purity'];
+    }
+
+    var res = await client.get_req(baseUrl, queryParameters: params);
+    if (res == null || res.statusCode != 200 || res.data == null) return [];
+
+    var map = res.data;
+    var data = map['data'];
+    if (data == null) return [];
+
+    var results = [];
+    for (var i = 0; i < data.length; i++) {
+       var item = data[i];
+
+       var uploaderName = 'Wallhaven Creator';
+       var uploaderAvatar = '';
+       var uploaderHome = 'https://wallhaven.cc';
+       if (item['uploader'] != null) {
+         if (item['uploader']['username'] != null) {
+           uploaderName = item['uploader']['username'];
+           uploaderHome = 'https://wallhaven.cc/user/' + uploaderName;
+         }
+         if (item['uploader']['avatar'] != null && item['uploader']['avatar']['200px'] != null) {
+           uploaderAvatar = item['uploader']['avatar']['200px'];
+         }
+       }
+
+       var thumbUrl = item['path'];
+       if (item['thumbs'] != null) {
+         if (item['thumbs']['large'] != null) {
+           thumbUrl = item['thumbs']['large'];
+         } else if (item['thumbs']['original'] != null) {
+           thumbUrl = item['thumbs']['original'];
+         }
+       }
+
+       results.add({
+          'id': item['id'].toString(),
+          'title': 'Wallhaven ' + item['id'].toString(),
+          'url': item['path'],
+          'thumbnail': thumbUrl,
+          'author': {
+            'id': uploaderName,
+            'name': uploaderName,
+            'avatar': uploaderAvatar,
+            'homeUrl': uploaderHome
+          },
+          'tags': [item['category'], item['purity']],
+          'description': 'Resolution: ' + (item['resolution'] != null ? item['resolution'].toString() : ''),
+          'views_count': item['views'],
+          'likes_count': item['favorites'],
+          'published_at': item['created_at'],
+          'originUrl': item['url'],
+          'contentType': 'wallpaper'
+       });
+    }
+    return results;
+  }
+
+  async fun explore(category, page, {config}) {
+    var cfg = config != null ? Map.from(config) : {};
+    cfg['sorting'] = category;
+    return await search('', page, config: cfg);
+  }
+
+  async fun getDetail(id, {config}) {
+     if (client == null) init(null);
+     var url = 'https://wallhaven.cc/api/v1/w/' + id.toString();
+     var res = await client.get_req(url);
+     if (res == null || res.statusCode != 200 || res.data == null) return null;
+     var map = res.data;
+     var item = map['data'];
+     if (item == null) return null;
+
+     var uploaderName = 'Wallhaven Creator';
+     var uploaderAvatar = '';
+     if (item['uploader'] != null) {
+       if (item['uploader']['username'] != null) uploaderName = item['uploader']['username'];
+       if (item['uploader']['avatar'] != null && item['uploader']['avatar']['200px'] != null) {
+         uploaderAvatar = item['uploader']['avatar']['200px'];
+       }
+     }
+
+     var tags = [];
+     if (item['tags'] != null) {
+        for (var t in item['tags']) {
+           if (t['name'] != null) tags.add(t['name']);
+        }
+     }
+
+     return {
+        'id': item['id'].toString(),
+        'title': 'Wallhaven ' + item['id'].toString(),
+        'url': item['path'],
+        'thumbnail': item['path'],
+        'author': {
+          'name': uploaderName,
+          'avatar': uploaderAvatar
+        },
+        'tags': tags,
+        'images': [item['path']],
+        'views_count': item['views'],
+        'likes_count': item['favorites'],
+        'published_at': item['created_at'],
+        'contentType': 'wallpaper'
+     };
+  }
+}
+
+export { Source }
