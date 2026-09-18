@@ -1,0 +1,11 @@
+{
+  "id": "org.pyromagma.wallpaper.unsplash",
+  "name": "Unsplash HD Source",
+  "protocol": "hetu",
+  "contentType": "wallpaper",
+  "version": "1.0.0",
+  "entry": "source.ht",
+  "description": "Unsplash 艺术与高画质摄影海报/壁纸插件",
+  "author": "PyroMagma Team",
+  "homepage": "https://unsplash.com"
+}

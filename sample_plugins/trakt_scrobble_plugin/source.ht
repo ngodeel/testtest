@@ -1,0 +1,58 @@
+class Source {
+  var id = 'org.pyromagma.sync.trakt';
+  var name = 'Trakt.tv Movie & Video Scrobbler';
+  var version = '1.0.0';
+  var author = 'PyroMagma Sync Team';
+  var description = '视频与电影观看进度打卡反推插件 (Trakt.tv Scrobble)';
+  var icon = 'https://trakt.tv/favicon.ico';
+
+  fun manifest() {
+    return {
+      'id': id,
+      'name': name,
+      'version': version,
+      'description': description,
+      'author': author,
+      'icon': icon,
+      'contentType': 'scrobbler',
+      'supportsPush': true,
+      'supportsScrobble': true,
+      'scrobbleTargetTypes': ['video', 'movie'],
+      'scrobbleThreshold': { 'progressRatio': 0.8 }
+    };
+  }
+
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'client_id',
+        'type': 'text',
+        'label': 'Trakt Client ID',
+        'default': ''
+      }
+    ];
+  }
+
+  async fun scrobble(contentId, payload, {config}) {
+    return await push(contentId, payload, config: config);
+  }
+
+  async fun push(contentId, payload, {config}) {
+    var movieTitle = payload['title'] != null ? payload['title'].toString() : contentId;
+    var progress = payload['progress'] != null ? payload['progress'] : 100;
+
+    return {
+      'status': 'success',
+      'service': 'Trakt.tv',
+      'action': 'scrobble/stop',
+      'movie': movieTitle,
+      'progress': progress
+    };
+  }
+
+  async fun pull(query, {config}) {
+    return [];
+  }
+}
+
+export { Source }
