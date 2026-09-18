@@ -1,0 +1,9 @@
+{
+  "id": "org.europepmc.paper",
+  "name": "Europe PMC Biomedical Literature",
+  "version": "1.0.0",
+  "contentType": "paper",
+  "protocol": "hetu",
+  "entry": "source.ht",
+  "description": "全球顶级生命科学、生物信息与医学开放文献检索库，包含4000万+研究文献"
+}

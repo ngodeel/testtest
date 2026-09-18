@@ -1,0 +1,9 @@
+{
+  "id": "org.semanticscholar.paper",
+  "name": "Semantic Scholar AI Index",
+  "version": "1.0.0",
+  "contentType": "paper",
+  "protocol": "hetu",
+  "entry": "source.ht",
+  "description": "由艾伦人工智能研究所（AI2）打造的 AI 驱动学术搜索引擎，收录超2亿篇前沿论文"
+}
