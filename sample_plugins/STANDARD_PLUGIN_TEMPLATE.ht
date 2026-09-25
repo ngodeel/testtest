@@ -1,0 +1,147 @@
+/*
+ * ============================================================================
+ * PyroMagma 超级通用河图插件标准模板 (Super Universal Hetu Plugin Template V2)
+ * ============================================================================
+ * 本模板对齐“大一统媒体架构”，是所有插件开发的最高参考范本。
+ * 支持：API 模式、Scraper 模式、登录态维持、集合嵌套、全领域特征平铺。
+ */
+
+import 'module:http' as http;
+import 'module:host_webview' as webview;
+import 'module:storage' as storage;
+import 'module:html' as html;
+
+var HttpClient = http.HttpClient;
+var HttpBaseOptions = http.HttpBaseOptions;
+var Webview = webview.Webview;
+var Html = html.Html;
+
+class Source {
+  // --------------------------------------------------------------------------
+  // 1. 插件元数据与能力声明
+  // --------------------------------------------------------------------------
+  var id = 'org.pyromagma.plugin.blueprint';
+  var name = 'Universal Blueprint Source';
+  var version = '2.0.0';
+
+  fun manifest() {
+    return {
+      'id': id,
+      'name': name,
+      'version': version,
+      'contentType': 'universal',      // 标志此源支持多种媒体
+      'defaultLanguage': 'en',          // 源端偏好检索语言 ('en', 'zh', 'ja')
+      'capabilities': ['search', 'detail', 'scrape', 'login'],
+      'methods': ['api', 'html'],
+
+      // 声明支持的核心 Hook
+      'supportsSearch': true,
+      'supportsExplore': true,
+      'supportsDetail': true,
+      'supportsScrobble': true,
+
+      'scrobbleTargetTypes': ['music', 'video', 'novel', 'audio']
+    };
+  }
+
+  var client;
+
+  // --------------------------------------------------------------------------
+  // 2. 初始化：配置登录态与全局 Header
+  // --------------------------------------------------------------------------
+  fun init(context) {
+    var cookies = storage.get('auth_cookies');
+    var options = HttpBaseOptions(
+      headers: {
+        'user-agent': Webview.getUserAgent(),
+        'cookie': cookies != null ? cookies : '',
+        'accept': 'application/json, text/html'
+      }
+    );
+    client = HttpClient(options);
+  }
+
+  // --------------------------------------------------------------------------
+  // 3. 用户设置项
+  // --------------------------------------------------------------------------
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'api_key',
+        'type': 'password',
+        'label': 'API Secret',
+        'default': ''
+      }
+    ];
+  }
+
+  // --------------------------------------------------------------------------
+  // 4. 搜索 Hook：演示大一统 DTO 返回
+  // --------------------------------------------------------------------------
+  async fun search(query, page, {config}) {
+    if (client == null) init(null);
+
+    // 构造一个“有声小说”条目作为演示
+    var item = {
+      'id': 'blueprint_101',
+      'title': 'The Great Convergence',
+      'contentType': 'novel',          // 建议渲染类型
+
+      // 1. 创作者矩阵 (必填)
+      'creators': {
+        'author': 'Architect Alpha',
+        'voice': 'Studio Beta',
+        'translator': 'Bot Gamma'
+      },
+
+      // 2. 图像资源
+      'thumbnail': 'https://picsum.photos/300/450',
+      'cover': 'https://picsum.photos/600/900',
+
+      // 3. 核心链接
+      'url': 'https://example.com/novel/101',
+
+      // 4. 多模态特征池 (按需填充)
+      'content': 'Chapter 1: The architecture began to shift...', // 文本流
+      'mediaUrl': 'https://example.com/stream/101.mp3',           // 音频流
+      'duration': 1800,                                           // 时长(秒)
+      'wordCount': 5000,
+      'album': 'Blueprint Audio Series',
+
+      // 5. 集合特质 (演示单曲归属专辑)
+      'isCollection': false,
+      'parentId': 'collection_999',
+      'index': 1.0,
+
+      'description': 'A comprehensive guide to universal media models.',
+      'tags': ['Architecture', 'Tech', 'Music', 'Novel'],
+      'published': '2026-09-10'
+    };
+
+    return [item];
+  }
+
+  // --------------------------------------------------------------------------
+  // 5. 详情 Hook：拉取更完整的元数据
+  // --------------------------------------------------------------------------
+  async fun getDetail(id, {config}) {
+    // 可以在此处拉取歌词、高清图、相关推荐等
+    var detail = await search(id, 1, config: config);
+    var item = detail[0];
+    item['lyrics'] = '[00:00.00] The architecture is universal...';
+    return item;
+  }
+
+  // --------------------------------------------------------------------------
+  // 6. 静默打卡与主动推送
+  // --------------------------------------------------------------------------
+  async fun scrobble(id, payload, {config}) {
+    return { 'status': 'success' };
+  }
+
+  async fun push(id, payload, {config}) {
+    return { 'status': 'pushed' };
+  }
+}
+
+export { Source }
