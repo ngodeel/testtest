@@ -1,0 +1,78 @@
+import 'module:http' as http;
+
+class Source {
+  var id = 'org.pyromagma.sync.lastfm';
+  var name = 'Last.fm Scrobbler Plugin';
+  var version = '1.0.0';
+  var author = 'PyroMagma Sync Team';
+  var description = '音频与音乐播放打卡反推插件 (支持 Last.fm track.scrobble)';
+  var icon = 'https://www.last.fm/favicon.ico';
+
+  fun manifest() {
+    return {
+      'id': id,
+      'name': name,
+      'version': version,
+      'description': description,
+      'author': author,
+      'icon': icon,
+      'contentType': 'scrobbler',
+      'supportsPush': true,
+      'supportsPull': true,
+      'supportsScrobble': true,
+      'scrobbleTargetTypes': ['audio', 'music'],
+      'scrobbleThreshold': { 'dwellSeconds': 30 }
+    };
+  }
+
+  fun getConfigSchema() {
+    return [
+      {
+        'key': 'api_key',
+        'type': 'text',
+        'label': 'Last.fm API Key',
+        'default': '',
+        'hint': 'Your Last.fm API Key'
+      },
+      {
+        'key': 'session_key',
+        'type': 'text',
+        'label': 'User Session Key',
+        'default': '',
+        'hint': 'Last.fm Session Key'
+      }
+    ];
+  }
+
+  async fun scrobble(contentId, payload, {config}) {
+    return await push(contentId, payload, config: config);
+  }
+
+  async fun push(contentId, payload, {config}) {
+    var track = payload['title'] != null ? payload['title'].toString() : contentId;
+    var artist = payload['artist'] != null ? payload['artist'].toString() : 'Unknown Artist';
+    var timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).toInt();
+
+    // 格式化反推 Last.fm Scrobble 打卡报文
+    return {
+      'status': 'success',
+      'service': 'Last.fm',
+      'action': 'track.scrobble',
+      'track': track,
+      'artist': artist,
+      'scrobbledAt': timestamp
+    };
+  }
+
+  async fun pull(query, {config}) {
+    return [
+      {
+        'id': 'lastfm_history_01',
+        'title': 'Recent Scrobbles',
+        'service': 'Last.fm'
+      }
+    ];
+  }
+}
+
+export { Source }

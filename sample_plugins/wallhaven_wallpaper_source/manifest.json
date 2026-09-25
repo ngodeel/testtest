@@ -1,0 +1,12 @@
+{
+  "id": "org.pyromagma.wallpaper.wallhaven",
+  "name": "Wallhaven HD Source",
+  "protocol": "hetu",
+  "contentType": "wallpaper",
+  "defaultLanguage": "en",
+  "version": "1.0.0",
+  "entry": "source.ht",
+  "description": "全球最大二次元与风景高清壁纸库 Wallhaven 衍生插件",
+  "author": "PyroMagma Team",
+  "homepage": "https://wallhaven.cc"
+}

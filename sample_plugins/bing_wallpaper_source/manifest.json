@@ -1,0 +1,12 @@
+{
+  "id": "org.pyromagma.wallpaper.bing",
+  "name": "Bing Daily Wallpaper Source",
+  "protocol": "hetu",
+  "contentType": "wallpaper",
+  "defaultLanguage": "en",
+  "version": "1.0.0",
+  "entry": "source.ht",
+  "description": "必应每日高清壁纸数据源，支持按日期探索与高清大图预览",
+  "author": "PyroMagma Team",
+  "homepage": "https://pyromagma.org"
+}
